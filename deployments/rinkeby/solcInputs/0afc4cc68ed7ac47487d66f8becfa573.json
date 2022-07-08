@@ -1,0 +1,39 @@
+{
+    "language": "Solidity",
+    "sources": {
+        "contracts/FundMe.sol": {
+            "content": "// SPDX-License-Identifier: MIT\n\n// run yarn solhint contracts/*.sol to find and fix problems in code\n// goals: get funds from users, withdraw funds, set a minimum funding value in usd\n\npragma solidity ^0.8.0;\n\nimport \"./PriceConverter.sol\";\n\nerror NotOwner();\n\ncontract FundMe {\n    using PriceConverter for uint256;\n    // by adding the keyword \"using\" we could give any uint256 within the FundMe contract the libraries functions\n    // and pass the uint256 as the first parameter of that function.\n\n    // constant and immutable are good gas savers if youre only setting your variables once\n    uint256 public constant MINIMUM_USD = 50 * 1e18;\n\n    address[] public funders;\n    mapping(address => uint256) public addressToAmountFunded;\n    address public immutable i_owner;\n\n    AggregatorV3Interface public priceFeed;\n\n    constructor(address priceFeedAddress) {\n        i_owner = msg.sender;\n        priceFeed = AggregatorV3Interface(priceFeedAddress);\n    }\n\n    modifier isOwner() {\n        // require(msg.sender == i_owner, \"Only owner can withdraw.\");\n        if (msg.sender != i_owner) {\n            revert NotOwner();\n        }\n        _;\n    }\n\n    function fund() public payable {\n        // require(getConversionRate(msg.value) >= minimumUsd, \"Didn't send enough!\");\n        // msg.value fills the first param slot for getConversionRate(). if the function took two params, then you would\n        // have to put something in the brackets.\n        require(\n            msg.value.getConversionRate(priceFeed) >= MINIMUM_USD,\n            \"Didn't send enough!\"\n        );\n        funders.push(msg.sender);\n        addressToAmountFunded[msg.sender] += msg.value;\n    }\n\n    function withdraw() public isOwner {\n        //funderIndex = funderIndex + 1 === funderIndex++\n        for (\n            uint256 funderIndex = 0;\n            funderIndex < funders.length;\n            funderIndex++\n        ) {\n            address funder = funders[funderIndex];\n            addressToAmountFunded[funder] = 0;\n        }\n\n        funders = new address[](0);\n\n        // type casting msg.sender\n        // msg.sender = address\n        // payable(msg.sender) = payable address\n        (bool success, ) = payable(msg.sender).call{\n            value: address(this).balance\n        }(\"\");\n        require(success, \"Call failed\");\n    }\n\n    // what happens if someone sends ETH without using fund()? (so we cant keep track of their address)\n    // -> recieve() and fallback()\n\n    receive() external payable {\n        fund();\n    }\n\n    fallback() external payable {\n        fund();\n    }\n}\n"
+        },
+        "contracts/PriceConverter.sol": {
+            "content": "//SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\nimport \"@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol\";\n\nlibrary PriceConverter {\n    function getPrice(AggregatorV3Interface priceFeed)\n        internal\n        view\n        returns (uint256)\n    {\n        // interacting with an external contract, so need abi and address of that contract\n        // address 0x8A753747A1Fa494EC906cE90E9f37563A8AF630e\n        (, int256 price, , , ) = priceFeed.latestRoundData(); // eth in terms of usd\n        // 1,216.67000000\n        // need to convert int256 into uint256 (not all types are convertable)\n        return uint256(price * 1e10); // 1*10 == 10000000000 (to get the same amount of decimal places)\n    }\n\n    function getConversionRate(\n        uint256 ethAmount,\n        AggregatorV3Interface priceFeed\n    ) internal view returns (uint256) {\n        uint256 ethPrice = getPrice(priceFeed);\n        uint256 ethAmountInUsd = (ethPrice * ethAmount) / 1e18;\n        return ethAmountInUsd;\n    }\n\n    // function getVersion() internal view returns(uint256) {\n    //     AggregatorV3Interface priceFeed = AggregatorV3Interface(0x8A753747A1Fa494EC906cE90E9f37563A8AF630e);\n    //     return priceFeed.version();\n    // }\n}\n"
+        },
+        "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol": {
+            "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\ninterface AggregatorV3Interface {\n  function decimals() external view returns (uint8);\n\n  function description() external view returns (string memory);\n\n  function version() external view returns (uint256);\n\n  // getRoundData and latestRoundData should both raise \"No data present\"\n  // if they do not have data to report, instead of returning unset values\n  // which could be misinterpreted as actual reported values.\n  function getRoundData(uint80 _roundId)\n    external\n    view\n    returns (\n      uint80 roundId,\n      int256 answer,\n      uint256 startedAt,\n      uint256 updatedAt,\n      uint80 answeredInRound\n    );\n\n  function latestRoundData()\n    external\n    view\n    returns (\n      uint80 roundId,\n      int256 answer,\n      uint256 startedAt,\n      uint256 updatedAt,\n      uint80 answeredInRound\n    );\n}\n"
+        }
+    },
+    "settings": {
+        "optimizer": {
+            "enabled": false,
+            "runs": 200
+        },
+        "outputSelection": {
+            "*": {
+                "*": [
+                    "abi",
+                    "evm.bytecode",
+                    "evm.deployedBytecode",
+                    "evm.methodIdentifiers",
+                    "metadata",
+                    "devdoc",
+                    "userdoc",
+                    "storageLayout",
+                    "evm.gasEstimates"
+                ],
+                "": ["ast"]
+            }
+        },
+        "metadata": {
+            "useLiteralContent": true
+        }
+    }
+}
